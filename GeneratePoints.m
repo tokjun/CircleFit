@@ -1,4 +1,14 @@
 function P = GeneratePoints()
+%
+%   P = GeneratePoints()
+%
+% This matlab script generates a random points on the 2D circle
+% in the 3D space. The result is stored in points.csv
+% To visualize the result, use the following Matlab command:
+%
+%   scatter3(P(:,1), P(:,2), P(:,3))
+%
+
 
 alpha = pi*10.0/180.0 % rotation about x-axis
 beta = 0.0            % rotation about y-axis

@@ -1,3 +1,19 @@
+/*=========================================================================
+
+  Program:   Fit 2D plane to a set of 3D points
+  Language:  C++
+  Author:    Junichi Tokuda, Ph.D. (Brigham and Women's Hospital)
+
+  Copyright (c) Brigham and Women's Hospital. All rights reserved.
+  See ITKCopyright.txt or http://www.itk.org/HTML/Copyright.htm for details.
+
+     This software is distributed WITHOUT ANY WARRANTY; without even 
+     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+     PURPOSE.  See the above copyright notices for more information.
+
+=========================================================================*/
+
+
 #include <complex>
 #include "itkListSample.h"
 #include "itkCovarianceSampleFilter.h"
@@ -85,8 +101,13 @@ int main( int argc, char * argv [] )
   PointListType::Pointer points;
   points = PointListType::New();
 
+
+  //----------------------------------------
+  // Load the points
   LoadPoints(argv[1], points);
 
+  //----------------------------------------
+  // Perform PCA
   typedef itk::Statistics::CovarianceSampleFilter< PointListType > 
     CovarianceAlgorithmType;
   CovarianceAlgorithmType::Pointer covarianceAlgorithm = 
@@ -97,10 +118,6 @@ int main( int argc, char * argv [] )
   
   //std::cout << "Sample covariance = " << std::endl ; 
   //std::cout << covarianceAlgorithm->GetCovarianceMatrix() << std::endl;
-  
-  CovarianceAlgorithmType::MeasurementVectorType meanVector;
-  meanVector = covarianceAlgorithm->GetMean();
-  std::cout << "Sample mean = " << meanVector << std::endl ; 
   
   // Perform Symmetric Eigen Analysis
   typedef itk::FixedArray< double, 3 > EigenValuesArrayType;
@@ -114,17 +131,32 @@ int main( int argc, char * argv [] )
   analysis.ComputeEigenValuesAndVectors( covarianceAlgorithm->GetCovarianceMatrix(),
                                          eigenValues, eigenMatrix );    
 
+  // Print out the result of PCA
   std::cerr << eigenValues << std::endl;
   std::cerr << eigenMatrix << std::endl;
 
-  // The third eigen vector is the normal vector of the fitted plane
+
+  //----------------------------------------
+  // Extract the normal vector 
+  // The first eigen vector (with the minimal eigenvalue) is
+  // the normal vector of the fitted plane.
+
   VectorType principalVector = eigenMatrix[0];
   std::cerr << principalVector << std::endl;
 
-  // Transform each point
+  //----------------------------------------
+  // Calculate the average position of the all points.
+  // This is used as the origin of the new coordinate system on the
+  // fitted plane.
+
+  CovarianceAlgorithmType::MeasurementVectorType meanVector;
+  meanVector = covarianceAlgorithm->GetMean();
+  std::cout << "Sample mean = " << meanVector << std::endl ; 
+  
+  //----------------------------------------
+  // Project all the points to the fitted plane.
 
   PointListType::Pointer transPoints = PointListType::New();
-
   typedef PointListType::Iterator IteratorType;
   IteratorType iter = points->Begin();
 
@@ -132,21 +164,17 @@ int main( int argc, char * argv [] )
     {
     VectorType p1;
     VectorType p2;
-
     p1 = iter.GetMeasurementVector() - meanVector;
-
     p2[0] = p1*eigenMatrix[2];
     p2[1] = p1*eigenMatrix[1];
     p2[2] = p1*eigenMatrix[0];
     transPoints->PushBack(p2);
-
-    std::cout << "P2=("  << p2[0] << ", " << p2[1] << ", " << p2[2] << "); " << std::endl;
-
+    //std::cout << "P2=("  << p2[0] << ", " << p2[1] << ", " << p2[2] << "); " << std::endl;
     ++ iter;
     }
 
-  // Least square fit
-  
+
+  // TODO: Least square fit
 
 
   return EXIT_SUCCESS;
