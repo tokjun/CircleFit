@@ -173,9 +173,18 @@ int main( int argc, char * argv [] )
     ++ iter;
     }
 
-
-  // TODO: Least square fit
+  // Pick up three points from the list and calculate the intersection of
+  // the perpendicular bisectors of the two chords connecting the three points.
 
 
   return EXIT_SUCCESS;
+}
+
+
+
+void CalcIntersectionOfPerpendicularBisectors(VectorType& p1, VectorType& p2, VectorType& p3, VectorType& intersec)
+{
+  
+  
+  
 }
