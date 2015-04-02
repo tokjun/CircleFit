@@ -28,6 +28,9 @@ typedef std::vector<CoordType> CoordSetType;
 typedef itk::Vector< double, 3 > VectorType;
 typedef itk::Statistics::ListSample< VectorType > PointListType;
 
+
+void CalcIntersectionOfPerpendicularBisectors2D(VectorType& p1, VectorType& p2, VectorType& p3, VectorType& intersec);
+  
 // Load points from the csv file. If successful, return > 0
 int LoadPoints(const char* filename, PointListType* points)
 {
@@ -167,7 +170,8 @@ int main( int argc, char * argv [] )
     p1 = iter.GetMeasurementVector() - meanVector;
     p2[0] = p1*eigenMatrix[2];
     p2[1] = p1*eigenMatrix[1];
-    p2[2] = p1*eigenMatrix[0];
+    //p2[2] = p1*eigenMatrix[0];
+    p2[2] = 0.0;
     transPoints->PushBack(p2);
     //std::cout << "P2=("  << p2[0] << ", " << p2[1] << ", " << p2[2] << "); " << std::endl;
     ++ iter;
@@ -176,15 +180,76 @@ int main( int argc, char * argv [] )
   // Pick up three points from the list and calculate the intersection of
   // the perpendicular bisectors of the two chords connecting the three points.
 
+  // Pick up 3 points from the point set
+  int nPoints = 0;
+  VectorType center;
+  center[0] = 0.0;
+  center[1] = 0.0;
+  center[2] = 0.0;
+  
+  for (IteratorType iter1 = transPoints->Begin(); iter1 != transPoints->End(); ++ iter1)
+    {
+    IteratorType iter2 = iter1;
+    for (++ iter2; iter2 != transPoints->End(); ++ iter2)
+      {
+      IteratorType iter3 = iter2;
+      for (++ iter3; iter3 != transPoints->End(); ++ iter3)
+        {
+        VectorType p1 = iter1.GetMeasurementVector();
+        VectorType p2 = iter2.GetMeasurementVector();
+        VectorType p3 = iter3.GetMeasurementVector();
+        VectorType c;
+        CalcIntersectionOfPerpendicularBisectors2D(p1, p2, p3, c);
+        center = center + c;
+        }
+      }
+    }
+  center = center / nPoints;
+  std::cout << "Center=("  << center[0] << ", " << center[1] << ", " << center[2] << "); " << std::endl;
 
   return EXIT_SUCCESS;
 }
 
 
-
-void CalcIntersectionOfPerpendicularBisectors(VectorType& p1, VectorType& p2, VectorType& p3, VectorType& intersec)
+void CalcIntersectionOfPerpendicularBisectors2D(VectorType& p1, VectorType& p2, VectorType& p3, VectorType& intersec)
 {
+
+  // Compute the bisecting points between p1 and p2 (m1), and p2 and p3 (m2)
+  VectorType m1 = (p1+p2)/2.0;
+  VectorType m2 = (p2+p3)/2.0;
+
+  // Compute the normal vectors along the perpendicular bisectors
+  VectorType v12 = (p2-p1);
+  VectorType v23 = (p3-p2);
+  v12.Normalize();
+  v23.Normalize();
+
+  VectorType n1;
+  n1[0] = -v12[1];
+  n1[1] = v12[0];
+  n1[2] = v12[2];
+
+  VectorType n2;
+  n2[0] = -v23[1];
+  n2[1] = v23[0];
+  n2[2] = v23[2];
+
+  // Compute the projection of m2 onto the perpendicular bisector of p1p2
+  VectorType h = m1 + ((m2-m1)*n1)*n1;
+
+  // The intersecting point of the two perpendicular bisectors (= estimated
+  // center of fitted circle) is 'c' can be written as:
+  //
+  //    <c> = <m2> + a * <n2>
+  //
+  // where 'a' is a scalar value. Projection of 'c' on the m2h is 'h'
+  //
+  //    a * <n2> * (<h> - <m2>)/(|<h>-<m2>|) = |<h> - <m2>|
+  //    a = |<h> - <m2>|^2 / {<n2> * (<h> - <m2>)}
+  //
+
+  VectorType::RealValueType a = (h - m2)*(h - m2) / (n2 * (h - m2));
   
-  
+  intersec = m2 + a * n2;
   
 }
