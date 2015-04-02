@@ -10,13 +10,13 @@ function P = GeneratePoints()
 %
 
 
-alpha = pi*10.0/180.0 % rotation about x-axis
-beta = 0.0            % rotation about y-axis
-gamma = 0.0           % rotation about z-axis
+alpha = 20.0*pi/180.0 % rotation about x-axis
+beta =  0.0*pi/180.0  % rotation about y-axis
+gamma = 0.0*pi/180.0 % rotation about z-axis
 
 offset = [0.0, 0.0, 0.0];
 
-N = 200;
+N = 5;
 R = 50.0;
 sigma = 2.0;
 
@@ -40,4 +40,4 @@ P = [R*cos(theta), R*sin(theta), zeros(N,1)];
 P = (Rz*Ry*Rx*P')' + ones(N,1) * offset
 P = P + ERR;
 
-csvwrite('points.csv', P)
+csvwrite('points2.csv', P)

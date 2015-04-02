@@ -225,8 +225,8 @@ int main( int argc, char * argv [] )
   // Transform the center point to the original coordinate system
   VectorType center = meanIntersect[0] * nx + meanIntersect[1] * ny + meanIntersect[2] * nz + meanPoint;
 
-  std::cout << "Number of points: " << nPoints << std::endl;
-  std::cout << "Number of points used: " << nPointsUsed << std::endl;
+  std::cout << "Number of estimated center points: " << nPoints << std::endl;
+  std::cout << "Number of estimated center points used: " << nPointsUsed << std::endl;
   std::cout << "Center = " << center << std::endl;
 
   return EXIT_SUCCESS;
