@@ -18,6 +18,7 @@
 #include "itkListSample.h"
 #include "itkCovarianceSampleFilter.h"
 #include "itkSymmetricEigenAnalysis.h"
+#include "itkAffineTransform.h"
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
@@ -26,10 +27,19 @@ typedef std::vector<double> CoordType;
 typedef std::vector<CoordType> CoordSetType;
 
 typedef itk::Vector< double, 3 > VectorType;
+typedef itk::Point< double, 3> PointType;
+typedef itk::Matrix< double, 3, 3 > MatrixType;
+typedef itk::FixedArray< double, 3 > ArrayType;
+typedef itk::AffineTransform< double, 3 > TransformType;
 typedef itk::Statistics::ListSample< VectorType > PointListType;
-
+typedef PointListType::Iterator PointListIteratorType;
+typedef itk::Statistics::CovarianceSampleFilter< PointListType > CovarianceAlgorithmType;
+typedef itk::SymmetricEigenAnalysis< CovarianceAlgorithmType::MatrixType, ArrayType, MatrixType > SymmetricEigenAnalysisType;
 
 int CalcIntersectionOfPerpendicularBisectors2D(VectorType& p1, VectorType& p2, VectorType& p3, VectorType& intersec, double radius);
+double CalcAverageMinDistanceOfRotatedPoints(PointListType::Pointer rotatingPoints, PointListType::Pointer fixedPoints,
+					     VectorType& principalVector, int angle,
+					     MatrixType& rotationMatrix);
   
 // Load points from the csv file. If successful, return > 0
 int LoadPoints(const char* filename, PointListType* points)
@@ -79,9 +89,9 @@ int LoadPoints(const char* filename, PointListType* points)
           return 0;
           }
         }
-
       }
     }
+  std::cout << std::endl;
   configfile.close();
   
   return 1;
@@ -94,63 +104,53 @@ int main( int argc, char * argv [] )
   if( argc < 2 )
     {
     std::cerr << "Usage: " << std::endl;
-    std::cerr << argv[0] << " pointData [radius]" << std::endl;
+    std::cerr << argv[0] << " srcPoints dstPoints [radius]" << std::endl;
     return EXIT_FAILURE;
     }
   const unsigned int Dimension = 2;
 
-  typedef std::complex< float >              PixelType;
-
-  PointListType::Pointer points;
-  points = PointListType::New();
-
   double radius = -1.0;
-  if (argc > 2)
+  if (argc > 3)
     {
-    radius = atof(argv[2]);
+    radius = atof(argv[3]);
     }
 
   //----------------------------------------
   // Load the points
-  LoadPoints(argv[1], points);
+
+  PointListType::Pointer srcPoints, dstPoints;
+  srcPoints = PointListType::New();
+  dstPoints = PointListType::New();
+
+  LoadPoints(argv[1], srcPoints);
+  LoadPoints(argv[2], dstPoints);
 
   //----------------------------------------
   // Perform PCA
-  typedef itk::Statistics::CovarianceSampleFilter< PointListType > 
-    CovarianceAlgorithmType;
+
   CovarianceAlgorithmType::Pointer covarianceAlgorithm = 
     CovarianceAlgorithmType::New();
   
-  covarianceAlgorithm->SetInput( points );
+  covarianceAlgorithm->SetInput( dstPoints );
   covarianceAlgorithm->Update();
-  
-  //std::cout << "Sample covariance = " << std::endl ; 
-  //std::cout << covarianceAlgorithm->GetCovarianceMatrix() << std::endl;
-  
+    
   // Perform Symmetric Eigen Analysis
-  typedef itk::FixedArray< double, 3 > EigenValuesArrayType;
-  typedef itk::Matrix< double, 3, 3 > EigenVectorMatrixType;
-  typedef itk::SymmetricEigenAnalysis< CovarianceAlgorithmType::MatrixType,
-    EigenValuesArrayType, EigenVectorMatrixType > SymmetricEigenAnalysisType;
   SymmetricEigenAnalysisType analysis ( 3 );
-  EigenValuesArrayType eigenValues;
-  EigenVectorMatrixType eigenMatrix;
+  ArrayType eigenValues;
+  MatrixType eigenMatrix;
   analysis.SetOrderEigenMagnitudes( true );
   analysis.ComputeEigenValuesAndVectors( covarianceAlgorithm->GetCovarianceMatrix(),
                                          eigenValues, eigenMatrix );    
-
-  // Print out the result of PCA
-  std::cout << eigenValues << std::endl;
-  std::cout << eigenMatrix << std::endl;
-
 
   //----------------------------------------
   // Extract the normal vector 
   // The first eigen vector (with the minimal eigenvalue) is
   // the normal vector of the fitted plane.
 
-  VectorType principalVector = eigenMatrix[0];
-  std::cout << principalVector << std::endl;
+  VectorType nx =  eigenMatrix[2];
+  VectorType ny =  eigenMatrix[1];
+  VectorType nz =  eigenMatrix[0];
+  VectorType principalVector = nz;
 
   //----------------------------------------
   // Calculate the average position of the all points.
@@ -159,32 +159,23 @@ int main( int argc, char * argv [] )
 
   CovarianceAlgorithmType::MeasurementVectorType meanPoint;
   meanPoint = covarianceAlgorithm->GetMean();
-  std::cout << "Sample mean = " << meanPoint << std::endl ; 
   
   //----------------------------------------
   // Project all the points to the fitted plane.
 
-  PointListType::Pointer transPoints = PointListType::New();
-  typedef PointListType::Iterator IteratorType;
-  IteratorType iter = points->Begin();
-
-  VectorType nx =  eigenMatrix[2];
-  VectorType ny =  eigenMatrix[1];
-  VectorType nz =  eigenMatrix[0];
-  
-  while (iter != points->End())
+  PointListType::Pointer projectedPoints = PointListType::New();
+  for (PointListIteratorType iter = dstPoints->Begin(); iter != dstPoints->End(); ++iter)
     {
     VectorType p1;
     VectorType p2;
     p1 = iter.GetMeasurementVector() - meanPoint;
     p2[0] = p1*nx;
     p2[1] = p1*ny;
-    //p2[2] = p1*nz;
     p2[2] = 0.0;
-    transPoints->PushBack(p2);
-    ++ iter;
+    projectedPoints->PushBack(p2);
     }
 
+  //----------------------------------------
   // Pick up every combination of three points from the list and calculate
   // the intersection of the perpendicular bisectors of the two chords connecting
   // the three points.
@@ -197,13 +188,13 @@ int main( int argc, char * argv [] )
   int nPoints = 0;
   int nPointsUsed = 0;
 
-  for (IteratorType iter1 = transPoints->Begin(); iter1 != transPoints->End(); ++ iter1)
+  for (PointListIteratorType iter1 = projectedPoints->Begin(); iter1 != projectedPoints->End(); ++iter1)
     {
-    IteratorType iter2 = iter1;
-    for (++ iter2; iter2 != transPoints->End(); ++ iter2)
+    PointListIteratorType iter2 = iter1;
+    for (++iter2; iter2 != projectedPoints->End(); ++iter2)
       {
-      IteratorType iter3 = iter2;
-      for (++ iter3; iter3 != transPoints->End(); ++ iter3)
+      PointListIteratorType iter3 = iter2;
+      for (++iter3; iter3 != projectedPoints->End(); ++iter3)
         {
         VectorType p1 = iter1.GetMeasurementVector();
         VectorType p2 = iter2.GetMeasurementVector();
@@ -219,20 +210,120 @@ int main( int argc, char * argv [] )
         }
       }
     }
-
   meanIntersect = meanIntersect / nPointsUsed;
 
+  //----------------------------------------
   // Transform the center point to the original coordinate system
+
   VectorType center = meanIntersect[0] * nx + meanIntersect[1] * ny + meanIntersect[2] * nz + meanPoint;
 
   std::cout << "Number of estimated center points: " << nPoints << std::endl;
   std::cout << "Number of estimated center points used: " << nPointsUsed << std::endl;
-  std::cout << "Center = " << center << std::endl;
+  std::cout << "Center = " << center << std::endl;  
+  std::cout << std::endl;
+
+  //----------------------------------------
+  // Calculate matrix from original coordinate system to plane coordinate system
+
+  MatrixType originalToPlaneMatrix;
+  for (int i = 0; i < 3; ++i)
+    {
+    originalToPlaneMatrix[i][0] = nx[i];
+    originalToPlaneMatrix[i][1] = ny[i];
+    originalToPlaneMatrix[i][2] = nz[i];
+    }
+    
+  //----------------------------------------
+  // Rotate points from original position to in-plane position
+  
+  PointListType::Pointer inPlanePoints = PointListType::New();
+  for (PointListIteratorType iter = srcPoints->Begin(); iter != srcPoints->End(); ++iter)
+    {
+    VectorType pp = originalToPlaneMatrix*iter.GetMeasurementVector() + center;
+    inPlanePoints->PushBack(pp);
+    }
+
+  //----------------------------------------
+  // Rotate point around principal vector and compute average minimum distance
+  
+  double globalAverageMinimumDistance = -1.0;
+  MatrixType tmpRotationMatrix;
+  MatrixType globalRotationMatrix;
+  double globalRotationAngle = 0.0;
+  bool circleFlipped = false;
+
+  // TODO: Optimize. Use a step of 3 degrees (for example) and find minimum average distance.
+  //       When found, use a step of 1 degree between the 3 degrees previously found.
+  //       Step of 1 = 360 iterations
+  //       Optimized (step of 3) = (360 / 3) + 3 = 123 iterations
+  //       Optimized (step of 10) = (360 / 10) + 10 = 46 iterations
+  //       If step is too big though, average minimum can be missed, and registration fail
+  for (int angle = 0; angle < 360; ++angle)
+    {
+    double averageMinDistance = CalcAverageMinDistanceOfRotatedPoints(inPlanePoints, dstPoints,
+								      principalVector, angle, 
+								      tmpRotationMatrix);
+
+    if (globalAverageMinimumDistance < 0 || averageMinDistance < globalAverageMinimumDistance)
+      {
+      globalAverageMinimumDistance = averageMinDistance;
+      globalRotationMatrix = tmpRotationMatrix;
+      globalRotationAngle = angle;
+      }
+    }
+
+  //----------------------------------------
+  // Rotate circle around one of the other axis, nx or ny, and recalculate average minimum distance
+  // to also find the global minimum (including symmetry)
+
+  TransformType::Pointer flippingTransform = TransformType::New();
+  flippingTransform->Rotate3D(nx, M_PI);
+
+  PointListType::Pointer flippedInPlanePoints = PointListType::New();
+  for (PointListIteratorType iter = inPlanePoints->Begin(); iter != inPlanePoints->End(); ++iter)
+    {
+    flippedInPlanePoints->PushBack(flippingTransform->GetMatrix()*iter.GetMeasurementVector());
+    }
+
+  for (int angle = 0; angle < 360; ++angle)
+    {
+    double averageMinDistance = CalcAverageMinDistanceOfRotatedPoints(flippedInPlanePoints, dstPoints,
+								      principalVector, angle,
+								      tmpRotationMatrix);
+
+    if (globalAverageMinimumDistance < 0 || averageMinDistance < globalAverageMinimumDistance)
+      {
+      globalAverageMinimumDistance = averageMinDistance;
+      globalRotationMatrix = tmpRotationMatrix;
+      globalRotationAngle = angle;
+      circleFlipped = true;
+      }
+    }
+
+  std::cout << "Best Fitting angle: " << globalRotationAngle << " (" << (circleFlipped ? "Flipped" : "Not flipped") << ")" << std::endl
+	    << "Average Minimum Distance: " << globalAverageMinimumDistance << std::endl;
+
+  MatrixType registrationMatrix = circleFlipped ? 
+    globalRotationMatrix*flippingTransform->GetMatrix()*originalToPlaneMatrix :
+    globalRotationMatrix*originalToPlaneMatrix;
+  std::cout << "Registration Matrix: " << std::endl << registrationMatrix << std::endl;
+
+  //----------------------------------------
+  // Output registered points for checking
+  
+
+  std::ofstream outputFile("registeredPoints.csv");
+  for (PointListIteratorType iter = srcPoints->Begin(); iter != srcPoints->End(); ++iter)
+    {
+    VectorType tmpVector = center + registrationMatrix*iter.GetMeasurementVector();
+    outputFile << tmpVector[0] << "," << tmpVector[1] << "," << tmpVector[2] << std::endl;
+    }
+  outputFile.close();
 
   return EXIT_SUCCESS;
 }
 
-
+//--------------------------------------------------------------------------------
 // Return 0, if the data set may not give a good estimate.
 int CalcIntersectionOfPerpendicularBisectors2D(VectorType& p1, VectorType& p2, VectorType& p3, VectorType& intersect, double radius)
 {
@@ -300,4 +391,44 @@ int CalcIntersectionOfPerpendicularBisectors2D(VectorType& p1, VectorType& p2, V
     }
 
   return 1;
+}
+
+//--------------------------------------------------------------------------------
+// Return average minimum distance between rotated and fixed pointsets,
+// as well as the rotation matrix used
+double CalcAverageMinDistanceOfRotatedPoints(PointListType::Pointer rotatingPoints, PointListType::Pointer fixedPoints,
+					   VectorType& principalVector, int angle, 
+					   MatrixType& rotationMatrix)
+{
+  // Rotate points
+  TransformType::Pointer rotationTransform = TransformType::New();
+  rotationTransform->Rotate3D(principalVector, angle * M_PI / 180);
+  rotationMatrix = rotationTransform->GetMatrix();
+  
+  double averageMinDistance = 0.0;
+  int numberOfPoints = 0;
+  for (PointListIteratorType iter1 = rotatingPoints->Begin(); iter1 != rotatingPoints->End(); ++iter1)
+    {
+    // Rotate point
+    VectorType rp = rotationMatrix*iter1.GetMeasurementVector();
+
+    // Compute minDistance
+    double minDistance = -1.0;
+    for (PointListIteratorType iter2 = fixedPoints->Begin(); iter2 != fixedPoints->End(); ++iter2)
+      {
+      VectorType fp = iter2.GetMeasurementVector();
+      
+      double distance = std::sqrt(std::pow(rp[0]-fp[0],2) + 
+				  std::pow(rp[1]-fp[1],2) + 
+				  std::pow(rp[2]-fp[2],2));
+      if (minDistance < 0 || distance < minDistance)
+	{
+	minDistance = distance;
+	}
+      }
+    averageMinDistance += minDistance;
+    numberOfPoints++;
+    }
+  averageMinDistance /= numberOfPoints;
+  return averageMinDistance;
 }
