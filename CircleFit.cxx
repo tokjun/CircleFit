@@ -234,7 +234,7 @@ int main( int argc, char * argv [] )
     }
     
   //----------------------------------------
-  // Rotate points from original position to in-plane position
+  // Transform points from original position to in-plane position
   
   PointListType::Pointer inPlanePoints = PointListType::New();
   for (PointListIteratorType iter = srcPoints->Begin(); iter != srcPoints->End(); ++iter)
@@ -244,7 +244,7 @@ int main( int argc, char * argv [] )
     }
 
   //----------------------------------------
-  // Rotate point around principal vector and compute average minimum distance
+  // Rotate points around principal axis and compute average minimum distance
   
   double globalAverageMinimumDistance = -1.0;
   MatrixType tmpRotationMatrix;
